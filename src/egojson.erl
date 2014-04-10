@@ -23,19 +23,14 @@ parse_string(Bin, State, Next) ->
 
 parse_string(<<>>, _Acc, #state{pos=Pos}, _Next) ->
     {error, {Pos+1, trancated_json}};
-parse_string(<<"\\\\", Rest/binary>>, Acc, State, Next) ->
-    parse_string(Rest, <<Acc/binary, $\\>>, ?INC_POS(State, 2), Next);
-parse_string(<<"\\\"", Rest/binary>>, Acc, State, Next) ->
-    parse_string(Rest, <<Acc/binary, $">>, ?INC_POS(State, 2), Next);
+parse_string(<<$\\, Ch, Rest/binary>>, Acc, State, Next) ->
+    parse_string(Rest, <<Acc/binary, Ch>>, ?INC_POS(State, 2), Next);
 parse_string(<<$", Rest/binary>>, Acc, State, Next) ->
     Next(Acc, Rest, ?INC_POS(State, 1));
 parse_string(<<Ch, Rest/binary>>, Acc, State, Next) ->
     parse_string(Rest, <<Acc/binary, Ch>>, ?INC_POS(State, 1), Next).
 
-
-white_space(<<$\n, Rest/binary>>, State, Next) ->
-    white_space(Rest, ?INC_POS(State, 1), Next);
-white_space(<<$ , Rest/binary>>, State, Next) ->
+white_space(<<Ch, Rest/binary>>, State, Next) when Ch =:= $  orelse Ch =:= $\n ->
     white_space(Rest, ?INC_POS(State, 1), Next);
 white_space(Bin, State, Next) ->
     Next(Bin, State).
@@ -56,8 +51,10 @@ parse_integer_digits(_Bin, _Acc, false, #state{pos=Pos}, _Next) ->
 parse_integer_digits(Bin, Acc, true, State, Next) ->
     Next(Acc, Bin, State).
 
+parse_fractional_digits(<<$., Bin/binary>>, State, Next) ->
+    parse_fractional_digits(Bin, 0, 0.1, false, ?INC_POS(State, 1), Next);
 parse_fractional_digits(Bin, State, Next) ->
-    parse_fractional_digits(Bin, 0, 0.1, false, State, Next).
+    Next(0, Bin, State).
 parse_fractional_digits(<<Ch, Rest/binary>>, Acc, K, _Inited, State, Next) when Ch >= $0 andalso Ch =< $9 ->
     parse_fractional_digits(Rest, Acc+(Ch-$0)*K, K/10, true, ?INC_POS(State, 1), Next);
 parse_fractional_digits(_Bin, _Acc, _K, false, #state{pos=Pos}, _Next) ->
@@ -68,35 +65,30 @@ parse_fractional_digits(Bin, Acc, _K, true, State, Next) ->
 parse_unsigned_number_part(Bin, State, Next) ->
     parse_integer_digits(
       Bin, State,
-      fun(Integer, <<$., Rest2/binary>>, State2) ->
+      fun(Integer, Rest2, State2) ->
               parse_fractional_digits(
                 Rest2, State2,
-                fun(Fraction, <<Ch, Rest3/binary>>, State3) when Ch =:= $e orelse Ch =:= $E ->
-                        parse_sign(
-                          Rest3, State3,
-                          fun(Sign, Rest4, State4) ->
-                                  parse_integer_digits(
-                                    Rest4, State4,
-                                    fun(E, Rest5, State5) ->
-                                            Next((Integer+Fraction)*math:pow(10, Sign*E), Rest5, State5)
-                                    end)
-                          end);
-                   (Fraction, Rest3, State3) ->
-                        Next(Integer+Fraction, Rest3, State3)
-                end);
-         (Integer, <<Ch, Rest2/binary>>, State2) when Ch =:= $e orelse Ch =:= $E ->
-              parse_sign(
-                Rest2, State2,
-                fun(Sign, Rest3, State3) ->
-                        parse_integer_digits(
+                fun(Fraction, Rest3, State3) ->
+                        parse_e_number_part(
                           Rest3, State3,
                           fun(E, Rest4, State4) ->
-                                  Next(Integer*math:pow(10, Sign*E), Rest4, State4)
+                                  Next((Integer+Fraction)*E, Rest4, State4)
                           end)
-                end);
-         (Integer, Rest2, State2) ->
-              Next(Integer, Rest2, State2)
+                end)
       end).
+
+parse_e_number_part(<<Ch, Rest/binary>>, State, Next)  when Ch =:= $e orelse Ch =:= $E ->
+    parse_sign(
+      Rest, ?INC_POS(State, 1),
+      fun(Sign, Rest2, State2) ->
+              parse_integer_digits(
+                Rest2, State2,
+                fun(E, Rest3, State3) ->
+                        Next(math:pow(10, Sign*E), Rest3, State3)
+                end)
+      end);
+parse_e_number_part(Bin, State, Next) ->
+    Next(1, Bin, State).
 
 parse_value(Bin, State, Next) ->
     white_space(
@@ -166,11 +158,9 @@ parse_object_field__(Bin, State0, Obj, Next) ->
          (Key, <<$,, Rest1/binary>>, State1) ->
               Obj2 = append_object(Key, true, Obj),
               parse_object_field(Rest1, ?INC_POS(State1, 1), Obj2, Next);
-         (Key, <<$}, Rest1/binary>>, State1) ->
+         (Key, Rest1, State1) ->
               Obj2 = append_object(Key, true, Obj),
-              Next(reverse_object(Obj2), Rest1, ?INC_POS(State1, 1));
-         (_Key, _Rest, #state{pos=Pos}) ->
-              {error, {Pos, invalid_json}}
+              parse_object_field_(Rest1, State1, Obj2, Next)
       end).
 
 parse_key(<<$", Rest/binary>>, State, Next) ->
