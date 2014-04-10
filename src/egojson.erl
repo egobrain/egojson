@@ -131,9 +131,7 @@ parse_object_field(Bin, Pos, Obj, Next) ->
       end).
 parse_object_field_(<<$}, Rest/binary>>, Pos, {ObjList}, Next) ->
     Next({lists:reverse(ObjList)}, Rest, Pos+1);
-parse_object_field_(Bin, Pos, Obj, Next) ->
-    parse_object_field__(Bin, Pos, Obj, Next).
-parse_object_field__(Bin, Pos0, {ObjList}, Next) ->
+parse_object_field_(Bin, Pos0, {ObjList}, Next) ->
     parse_key(
       Bin, Pos0,
       fun(Key, <<$:, Rest1/binary>>, Pos1) ->
@@ -182,9 +180,6 @@ parse_array_item(Bin, Pos, Arr, Next) ->
 parse_array_item_(<<$], Rest/binary>>, Pos, Arr, Next) ->
     Next(lists:reverse(Arr), Rest, Pos+1);
 parse_array_item_(Bin, Pos, Arr, Next) ->
-    parse_array_item__(Bin, Pos, Arr, Next).
-
-parse_array_item__(Bin, Pos, Arr, Next) ->
     parse_value(
       Bin, Pos,
       fun(Value, Rest, Pos2) ->
