@@ -33,10 +33,10 @@ parse_string(<<Ch, Rest/binary>>, Acc, State, Next) ->
     parse_string(Rest, <<Acc/binary, Ch>>, ?INC_POS(State, 1), Next).
 
 
-%% white_space(<<$ , Rest/binary>>, State, Next) ->
-%%     white_space(Rest, ?INC_POS(State, 1), Next);
-%% white_space(Bin, State, Next) ->
-%%     Next(Bin, State).
+white_space(<<$ , Rest/binary>>, State, Next) ->
+    white_space(Rest, ?INC_POS(State, 1), Next);
+white_space(Bin, State, Next) ->
+    Next(Bin, State).
 
 parse_sign(<<$-, Rest/binary>>, State, Next) ->
     Next(-1, Rest, ?INC_POS(State, 1));
@@ -86,37 +86,57 @@ parse_unsigned_number_part(Bin, State, Next) ->
               Next(Integer, Rest2, State2)
       end).
 
-parse_value(<<${, Rest/binary>>, State, Next) ->
+parse_value(Bin, State, Next) ->
+    white_space(
+      Bin, State,
+      fun(Rest, State2) ->
+              parse_value_(
+                Rest, State2,
+                fun(Value, Rest2, State3) ->
+                        white_space(
+                          Rest2, State3,
+                          fun(Rest3, State4) ->
+                                  Next(Value, Rest3, State4)
+                          end)
+                end)
+      end).
+parse_value_(<<${, Rest/binary>>, State, Next) ->
     parse_object(Rest, ?INC_POS(State, 1), Next);
-parse_value(<<$[, Rest/binary>>, State, Next) ->
+parse_value_(<<$[, Rest/binary>>, State, Next) ->
     parse_array(Rest, ?INC_POS(State, 1), Next);
-parse_value(<<$", Rest/binary>>, State, Next) ->
+parse_value_(<<$", Rest/binary>>, State, Next) ->
     parse_string(Rest, ?INC_POS(State, 1), Next);
-parse_value(<<$-, Rest/binary>>, State, Next) ->
+parse_value_(<<$-, Rest/binary>>, State, Next) ->
     parse_unsigned_number_part(
       Rest, ?INC_POS(State, 1),
       fun(Number, Rest2, State2) ->
               Next(-1*Number, Rest2, State2)
       end);
-parse_value(<<Ch, _Rest/binary>> = Data, State, Next) when Ch >= $0 andalso Ch =< $9 ->
+parse_value_(<<Ch, _Rest/binary>> = Data, State, Next) when Ch >= $0 andalso Ch =< $9 ->
     parse_unsigned_number_part(Data, ?INC_POS(State, 1), Next);
-parse_value(<<"null", Rest/binary>>, State, Next) ->
+parse_value_(<<"null", Rest/binary>>, State, Next) ->
     Next(null, Rest, ?INC_POS(State, 4));
-parse_value(<<"true", Rest/binary>>, State, Next) ->
+parse_value_(<<"true", Rest/binary>>, State, Next) ->
     Next(true, Rest, ?INC_POS(State, 4));
-parse_value(<<"false", Rest/binary>>, State, Next) ->
+parse_value_(<<"false", Rest/binary>>, State, Next) ->
     Next(false, Rest, ?INC_POS(State, 5));
-parse_value(_Bin, #state{pos=Pos}, _Next) ->
+parse_value_(_Bin, #state{pos=Pos}, _Next) ->
     {error, {Pos, invalid_json}}.
 
 parse_object(Bin, State, Next) ->
     parse_object_field(Bin, State, new_object(), Next).
 
-parse_object_field(<<$}, Rest/binary>>, State, Obj, Next) ->
-    Next(Obj, Rest, ?INC_POS(State, 1));
 parse_object_field(Bin, State, Obj, Next) ->
-    parse_object_field_(Bin, State, Obj, Next).
-parse_object_field_(Bin, State0, Obj, Next) ->
+    white_space(
+      Bin, State,
+      fun(Rest, State2) ->
+              parse_object_field_(Rest, State2, Obj, Next)
+      end).
+parse_object_field_(<<$}, Rest/binary>>, State, Obj, Next) ->
+    Next(Obj, Rest, ?INC_POS(State, 1));
+parse_object_field_(Bin, State, Obj, Next) ->
+    parse_object_field__(Bin, State, Obj, Next).
+parse_object_field__(Bin, State0, Obj, Next) ->
     parse_key(
       Bin, State0,
       fun(Key, <<$:, Rest1/binary>>, State1) ->
@@ -142,19 +162,34 @@ parse_object_field_(Bin, State0, Obj, Next) ->
       end).
 
 parse_key(<<$", Rest/binary>>, State, Next) ->
-    parse_string(Rest, ?INC_POS(State, 1), Next);
+    parse_string(
+      Rest, ?INC_POS(State, 1),
+      fun(Key, Rest2, State2) ->
+              white_space(
+                Rest2, State2,
+                fun(Rest3, State3) ->
+                        Next(Key, Rest3, State3)
+                end)
+      end);
 parse_key(_Bin, #state{pos=Pos}, _Next) ->
     {error, {Pos, invalid_json}}.
 
 parse_array(Bin, State, Next) ->
     parse_array_item(Bin, State, [], Next).
 
-parse_array_item(<<$], Rest/binary>>, State, Arr, Next) ->
-    Next(lists:reverse(Arr), Rest, ?INC_POS(State, 1));
 parse_array_item(Bin, State, Arr, Next) ->
-    parse_array_item_(Bin, State, Arr, Next).
-
+    white_space(
+      Bin, State,
+      fun(Rest, State2) ->
+              parse_array_item_(
+                Rest, State2, Arr, Next)
+      end).
+parse_array_item_(<<$], Rest/binary>>, State, Arr, Next) ->
+    Next(lists:reverse(Arr), Rest, ?INC_POS(State, 1));
 parse_array_item_(Bin, State, Arr, Next) ->
+    parse_array_item__(Bin, State, Arr, Next).
+
+parse_array_item__(Bin, State, Arr, Next) ->
     parse_value(
       Bin, State,
       fun(Value, Rest, State2) ->
