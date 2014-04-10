@@ -33,6 +33,8 @@ parse_string(<<Ch, Rest/binary>>, Acc, State, Next) ->
     parse_string(Rest, <<Acc/binary, Ch>>, ?INC_POS(State, 1), Next).
 
 
+white_space(<<$\n, Rest/binary>>, State, Next) ->
+    white_space(Rest, ?INC_POS(State, 1), Next);
 white_space(<<$ , Rest/binary>>, State, Next) ->
     white_space(Rest, ?INC_POS(State, 1), Next);
 white_space(Bin, State, Next) ->
@@ -81,6 +83,16 @@ parse_unsigned_number_part(Bin, State, Next) ->
                           end);
                    (Fraction, Rest3, State3) ->
                         Next(Integer+Fraction, Rest3, State3)
+                end);
+         (Integer, <<Ch, Rest2/binary>>, State2) when Ch =:= $e orelse Ch =:= $E ->
+              parse_sign(
+                Rest2, State2,
+                fun(Sign, Rest3, State3) ->
+                        parse_integer_digits(
+                          Rest3, State3,
+                          fun(E, Rest4, State4) ->
+                                  Next(Integer*math:pow(10, Sign*E), Rest4, State4)
+                          end)
                 end);
          (Integer, Rest2, State2) ->
               Next(Integer, Rest2, State2)
@@ -133,7 +145,7 @@ parse_object_field(Bin, State, Obj, Next) ->
               parse_object_field_(Rest, State2, Obj, Next)
       end).
 parse_object_field_(<<$}, Rest/binary>>, State, Obj, Next) ->
-    Next(Obj, Rest, ?INC_POS(State, 1));
+    Next(reverse_object(Obj), Rest, ?INC_POS(State, 1));
 parse_object_field_(Bin, State, Obj, Next) ->
     parse_object_field__(Bin, State, Obj, Next).
 parse_object_field__(Bin, State0, Obj, Next) ->
@@ -156,7 +168,7 @@ parse_object_field__(Bin, State0, Obj, Next) ->
               parse_object_field(Rest1, ?INC_POS(State1, 1), Obj2, Next);
          (Key, <<$}, Rest1/binary>>, State1) ->
               Obj2 = append_object(Key, true, Obj),
-              Next(Obj2, Rest1, ?INC_POS(State1, 1));
+              Next(reverse_object(Obj2), Rest1, ?INC_POS(State1, 1));
          (_Key, _Rest, #state{pos=Pos}) ->
               {error, {Pos, invalid_json}}
       end).
@@ -211,3 +223,6 @@ new_object() ->
 
 append_object(Key, Value, {List}) ->
     {[{Key, Value}|List]}.
+
+reverse_object({List}) ->
+    {lists:reverse(List)}.
