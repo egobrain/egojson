@@ -15,7 +15,7 @@ parse_string(Bin, Pos, Next) ->
     parse_string(Bin, <<>>, Pos, Next).
 
 parse_string(<<>>, _Acc, Pos, _Next) ->
-    {error, {Pos+1, trancated_json}};
+    {error, {Pos+1, invalid_json}};
 parse_string(<<$\\, Ch, Rest/binary>>, Acc, Pos, Next) ->
     parse_string(Rest, <<Acc/binary, Ch>>, Pos+2, Next);
 parse_string(<<$", Rest/binary>>, Acc, Pos, Next) ->
@@ -40,7 +40,7 @@ parse_integer_digits(Bin, Pos, Next) ->
 parse_integer_digits(<<Ch, Rest/binary>>, Acc, _Inited, Pos, Next) when Ch >= $0 andalso Ch =< $9 ->
     parse_integer_digits(Rest, Acc*10+Ch-$0, true, Pos+1, Next);
 parse_integer_digits(_Bin, _Acc, false, Pos, _Next) ->
-    {error, {Pos+1, trancated_json}};
+    {error, {Pos+1, invalid_json}};
 parse_integer_digits(Bin, Acc, true, Pos, Next) ->
     Next(Acc, Bin, Pos).
 
@@ -51,7 +51,7 @@ parse_fractional_digits(Bin, Pos, Next) ->
 parse_fractional_digits(<<Ch, Rest/binary>>, Acc, K, _Inited, Pos, Next) when Ch >= $0 andalso Ch =< $9 ->
     parse_fractional_digits(Rest, Acc+(Ch-$0)*K, K/10, true, Pos+1, Next);
 parse_fractional_digits(_Bin, _Acc, _K, false, Pos, _Next) ->
-    {error, {Pos+1, trancated_json}};
+    {error, {Pos+1, invalid_json}};
 parse_fractional_digits(Bin, Acc, _K, true, Pos, Next) ->
     Next(Acc, Bin, Pos).
 
