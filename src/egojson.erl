@@ -76,7 +76,7 @@ parse_unsigned_number_part(Bin, State, Next) ->
                                   parse_integer_digits(
                                     Rest4, State4,
                                     fun(E, Rest5, State5) ->
-                                            Next(Sign*(Integer+Fraction)*math:pow(0.1, E), Rest5, State5)
+                                            Next((Integer+Fraction)*math:pow(10, Sign*E), Rest5, State5)
                                     end)
                           end);
                    (Fraction, Rest3, State3) ->
@@ -111,7 +111,12 @@ parse_value(_Bin, #state{pos=Pos}, _Next) ->
 
 parse_object(Bin, State, Next) ->
     parse_object_field(Bin, State, new_object(), Next).
-parse_object_field(Bin, State0, Obj, Next) ->
+
+parse_object_field(<<$}, Rest/binary>>, State, Obj, Next) ->
+    Next(Obj, Rest, ?INC_POS(State, 1));
+parse_object_field(Bin, State, Obj, Next) ->
+    parse_object_field_(Bin, State, Obj, Next).
+parse_object_field_(Bin, State0, Obj, Next) ->
     parse_key(
       Bin, State0,
       fun(Key, <<$:, Rest1/binary>>, State1) ->
@@ -122,10 +127,8 @@ parse_object_field(Bin, State0, Obj, Next) ->
                         case Rest2 of
                             <<$,, Rest3/binary>> ->
                                 parse_object_field(Rest3, ?INC_POS(State2, 1), Obj2, Next);
-                            <<$}, Rest3/binary>> ->
-                                Next(Obj2, Rest3, State2);
                             _ ->
-                                {error, {State2#state.pos, invalid_json}}
+                                parse_object_field(Rest2, State2, Obj2, Next)
                         end
                 end);
          (Key, <<$,, Rest1/binary>>, State1) ->
@@ -146,7 +149,12 @@ parse_key(_Bin, #state{pos=Pos}, _Next) ->
 parse_array(Bin, State, Next) ->
     parse_array_item(Bin, State, [], Next).
 
+parse_array_item(<<$], Rest/binary>>, State, Arr, Next) ->
+    Next(lists:reverse(Arr), Rest, ?INC_POS(State, 1));
 parse_array_item(Bin, State, Arr, Next) ->
+    parse_array_item_(Bin, State, Arr, Next).
+
+parse_array_item_(Bin, State, Arr, Next) ->
     parse_value(
       Bin, State,
       fun(Value, Rest, State2) ->
@@ -154,10 +162,8 @@ parse_array_item(Bin, State, Arr, Next) ->
               case Rest of
                   <<$,, Rest2/binary>> ->
                       parse_array_item(Rest2, ?INC_POS(State2, 1), Arr2, Next);
-                  <<$], Rest2/binary>> ->
-                      Next(Arr2, Rest2, ?INC_POS(State, 1));
                   _ ->
-                      {error, {State2#state.pos, invalid_json}}
+                      parse_array_item(Rest, State2, Arr2, Next)
               end
       end).
 
