@@ -79,7 +79,20 @@ whitespaces_decode_test_() ->
        {<<"  {  \"a\"  :  1  ,  \"b\"  :  2  }  ">>, {ok, {[{<<"a">>, 1}, {<<"b">>, 2}]}}}
       ]).
 
-
+error_test_() ->
+    Tests =
+        [
+         {<<"">>, 1},
+         {<<"1.">>, 3},
+         {<<"-">>, 2},
+         {<<"\"">>, 2},
+         {<<"[">>, 2},
+         {<<"{">>, 2},
+         {<<"-1.">>, 4},
+         {<<"-1.e1">>, 4},
+         {<<"-1.0e">>, 6}
+        ],
+    [{F, fun() -> {error, {P, invalid_json}} = egojson:decode(F) end} || {F, P} <- Tests].
 
 t(Tests) ->
     [{F, fun() -> T = egojson:decode(F) end} || {F, T} <- Tests].

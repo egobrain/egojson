@@ -110,7 +110,7 @@ parse_value_(<<$-, Rest/binary>>, Pos, Next) ->
               Next(-1*Number, Rest2, Pos2)
       end);
 parse_value_(<<Ch, _Rest/binary>> = Data, Pos, Next) when Ch >= $0 andalso Ch =< $9 ->
-    parse_unsigned_number_part(Data, Pos+1, Next);
+    parse_unsigned_number_part(Data, Pos, Next);
 parse_value_(<<"null", Rest/binary>>, Pos, Next) ->
     Next(null, Rest, Pos+4);
 parse_value_(<<"true", Rest/binary>>, Pos, Next) ->
@@ -118,7 +118,7 @@ parse_value_(<<"true", Rest/binary>>, Pos, Next) ->
 parse_value_(<<"false", Rest/binary>>, Pos, Next) ->
     Next(false, Rest, Pos+5);
 parse_value_(_Bin, Pos, _Next) ->
-    {error, {Pos, invalid_json}}.
+    {error, {Pos+1, invalid_json}}.
 
 parse_object(Bin, Pos, Next) ->
     parse_object_field(Bin, Pos, {[]}, Next).
@@ -167,7 +167,7 @@ parse_key(<<$", Rest/binary>>, Pos, Next) ->
                 end)
       end);
 parse_key(_Bin, Pos, _Next) ->
-    {error, {Pos, invalid_json}}.
+    {error, {Pos+1, invalid_json}}.
 
 parse_array(Bin, Pos, Next) ->
     parse_array_item(Bin, Pos, [], Next).
