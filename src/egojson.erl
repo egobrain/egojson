@@ -17,11 +17,57 @@ parse_string(Bin, Pos, Next) ->
 parse_string(<<>>, _Acc, Pos, _Next) ->
     {error, {Pos+1, invalid_json}};
 parse_string(<<$\\, Ch, Rest/binary>>, Acc, Pos, Next) ->
-    parse_string(Rest, <<Acc/binary, Ch>>, Pos+2, Next);
+    case Ch of
+        $" -> parse_string(Rest, <<Acc/binary, Ch>>, Pos+2, Next);
+        $\\ -> parse_string(Rest, <<Acc/binary, Ch>>, Pos+2, Next);
+        $/ -> parse_string(Rest, <<Acc/binary, Ch>>, Pos+2, Next);
+        $b -> parse_string(Rest, <<Acc/binary, $\b>>, Pos+2, Next);
+        $f -> parse_string(Rest, <<Acc/binary, $\f>>, Pos+2, Next);
+        $n -> parse_string(Rest, <<Acc/binary, $\n>>, Pos+2, Next);
+        $r -> parse_string(Rest, <<Acc/binary, $\r>>, Pos+2, Next);
+        $t -> parse_string(Rest, <<Acc/binary, $\t>>, Pos+2, Next);
+        $u ->
+            parse_hexadecimal(
+              Rest, Pos+2,
+              fun(Symbol, Rest2, Pos2) ->
+                      parse_string(Rest2, <<Acc/binary, Symbol/binary>>, Pos2, Next)
+              end);
+        _ ->
+            {error, {Pos+2, invalid_json}}
+    end;
 parse_string(<<$", Rest/binary>>, Acc, Pos, Next) ->
     Next(Acc, Rest, Pos+1);
 parse_string(<<Ch, Rest/binary>>, Acc, Pos, Next) ->
     parse_string(Rest, <<Acc/binary, Ch>>, Pos+1, Next).
+
+parse_hexadecimal(Bin, Pos0, Next) ->
+    parse_hex(
+      Bin, 0, Pos0,
+      fun(H1, Rest, Pos) ->
+              parse_hex(
+                Rest, H1, Pos,
+                fun(H2, Rest2, Pos2) ->
+                        parse_hex(
+                          Rest2, H2, Pos2,
+                          fun(H3, Rest3, Pos3) ->
+                                  parse_hex(
+                                    Rest3, H3, Pos3,
+                                    fun(H4, Rest4, Pos4) ->
+                                            io:format("~p", [H4]),
+                                            Next(unicode:characters_to_binary([H4]) , Rest4, Pos4)
+                                    end)
+                          end)
+                end)
+      end).
+
+parse_hex(<<Ch, Rest/binary>>, Acc, Pos, Next) when Ch >= $0 andalso Ch =< $9 ->
+    Next(Acc * 16 + Ch - $0, Rest, Pos+1);
+parse_hex(<<Ch, Rest/binary>>, Acc, Pos, Next) when Ch >= $a andalso Ch =< $f ->
+    Next(Acc * 16 + Ch - $a + 10, Rest, Pos+1);
+parse_hex(<<Ch, Rest/binary>>, Acc, Pos, Next) when Ch >= $A andalso Ch =< $F ->
+    Next(Acc * 16 + Ch - $A + 10, Rest, Pos+1);
+parse_hex(_Bin, Pos, _Acc, _Next) ->
+    {error, {Pos+1, invalid_json}}.
 
 white_space(<<Ch, Rest/binary>>, Pos, Next) when Ch =:= $  orelse Ch =:= $\n ->
     white_space(Rest, Pos+1, Next);
@@ -132,39 +178,47 @@ parse_object_field(Bin, Pos, Obj, Next) ->
 parse_object_field_(<<$}, Rest/binary>>, Pos, {ObjList}, Next) ->
     Next({lists:reverse(ObjList)}, Rest, Pos+1);
 parse_object_field_(Bin, Pos0, {ObjList}, Next) ->
+    parse_object_field__(Bin, Pos0, {ObjList}, Next).
+parse_object_field__(Bin, Pos0, {ObjList}, Next) ->
     parse_key(
       Bin, Pos0,
       fun(Key, <<$:, Rest1/binary>>, Pos1) ->
               parse_value(
-                Rest1, Pos1,
+                Rest1, Pos1+1,
                 fun(Value, Rest2, Pos2) ->
                         Obj2 = {[{Key, Value}|ObjList]},
                         case Rest2 of
                             <<$,, Rest3/binary>> ->
-                                parse_object_field(Rest3, Pos2+1, Obj2, Next);
+                                parse_object_field__(Rest3, Pos2+1, Obj2, Next);
                             _ ->
                                 parse_object_field(Rest2, Pos2, Obj2, Next)
                         end
                 end);
          (Key, <<$,, Rest1/binary>>, Pos1) ->
               Obj2 = {[{Key, true}|ObjList]},
-              parse_object_field(Rest1, Pos1+1, Obj2, Next);
+              parse_object_field__(Rest1, Pos1+1, Obj2, Next);
          (Key, Rest1, Pos1) ->
               Obj2 = {[{Key, true}|ObjList]},
               parse_object_field_(Rest1, Pos1, Obj2, Next)
       end).
 
-parse_key(<<$", Rest/binary>>, Pos, Next) ->
-    parse_string(
-      Rest, Pos+1,
-      fun(Key, Rest2, Pos2) ->
-              white_space(
+parse_key(Bin, Pos, Next) ->
+    white_space(
+      Bin, Pos,
+      fun(Rest2, Pos2) ->
+              parse_key_(
                 Rest2, Pos2,
-                fun(Rest3, Pos3) ->
-                        Next(Key, Rest3, Pos3)
+                fun(Key, Rest3, Pos3) ->
+                        white_space(
+                          Rest3, Pos3,
+                          fun(Rest4, Pos4) ->
+                                  Next(Key, Rest4, Pos4)
+                          end)
                 end)
-      end);
-parse_key(_Bin, Pos, _Next) ->
+      end).
+parse_key_(<<$", Rest/binary>>, Pos, Next) ->
+    parse_string(Rest, Pos+1, Next);
+parse_key_(_Bin, Pos, _Next) ->
     {error, {Pos+1, invalid_json}}.
 
 parse_array(Bin, Pos, Next) ->
@@ -180,13 +234,15 @@ parse_array_item(Bin, Pos, Arr, Next) ->
 parse_array_item_(<<$], Rest/binary>>, Pos, Arr, Next) ->
     Next(lists:reverse(Arr), Rest, Pos+1);
 parse_array_item_(Bin, Pos, Arr, Next) ->
+    parse_array_item__(Bin, Pos, Arr, Next).
+parse_array_item__(Bin, Pos, Arr, Next) ->
     parse_value(
       Bin, Pos,
       fun(Value, Rest, Pos2) ->
               Arr2 = [Value|Arr],
               case Rest of
                   <<$,, Rest2/binary>> ->
-                      parse_array_item(Rest2, Pos2+1, Arr2, Next);
+                      parse_array_item__(Rest2, Pos2+1, Arr2, Next);
                   _ ->
                       parse_array_item(Rest, Pos2, Arr2, Next)
               end
