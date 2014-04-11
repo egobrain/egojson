@@ -53,7 +53,6 @@ parse_hexadecimal(Bin, Pos0, Next) ->
                                   parse_hex(
                                     Rest3, H3, Pos3,
                                     fun(H4, Rest4, Pos4) ->
-                                            io:format("~p", [H4]),
                                             Next(unicode:characters_to_binary([H4]) , Rest4, Pos4)
                                     end)
                           end)
@@ -69,7 +68,9 @@ parse_hex(<<Ch, Rest/binary>>, Acc, Pos, Next) when Ch >= $A andalso Ch =< $F ->
 parse_hex(_Bin, Pos, _Acc, _Next) ->
     {error, {Pos+1, invalid_json}}.
 
-white_space(<<Ch, Rest/binary>>, Pos, Next) when Ch =:= $  orelse Ch =:= $\n ->
+white_space(<<$ , Rest/binary>>, Pos, Next) ->
+    white_space(Rest, Pos+1, Next);
+white_space(<<$\n, Rest/binary>>, Pos, Next) ->
     white_space(Rest, Pos+1, Next);
 white_space(Bin, Pos, Next) ->
     Next(Bin, Pos).
