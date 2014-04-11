@@ -167,7 +167,7 @@ parse_value_(_Bin, Pos, _Next) ->
     {error, {Pos+1, invalid_json}}.
 
 parse_object(Bin, Pos, Next) ->
-    parse_object_field(Bin, Pos, {[]}, Next).
+    parse_object_field(Bin, Pos, [], Next).
 
 parse_object_field(Bin, Pos, Obj, Next) ->
     white_space(
@@ -175,18 +175,18 @@ parse_object_field(Bin, Pos, Obj, Next) ->
       fun(Rest, Pos2) ->
               parse_object_field_(Rest, Pos2, Obj, Next)
       end).
-parse_object_field_(<<$}, Rest/binary>>, Pos, {ObjList}, Next) ->
+parse_object_field_(<<$}, Rest/binary>>, Pos, ObjList, Next) ->
     Next({lists:reverse(ObjList)}, Rest, Pos+1);
-parse_object_field_(Bin, Pos0, {ObjList}, Next) ->
-    parse_object_field__(Bin, Pos0, {ObjList}, Next).
-parse_object_field__(Bin, Pos0, {ObjList}, Next) ->
+parse_object_field_(Bin, Pos0, ObjList, Next) ->
+    parse_object_field__(Bin, Pos0, ObjList, Next).
+parse_object_field__(Bin, Pos0, ObjList, Next) ->
     parse_key(
       Bin, Pos0,
       fun(Key, <<$:, Rest1/binary>>, Pos1) ->
               parse_value(
                 Rest1, Pos1+1,
                 fun(Value, Rest2, Pos2) ->
-                        Obj2 = {[{Key, Value}|ObjList]},
+                        Obj2 = [{Key, Value}|ObjList],
                         case Rest2 of
                             <<$,, Rest3/binary>> ->
                                 parse_object_field__(Rest3, Pos2+1, Obj2, Next);
@@ -195,10 +195,10 @@ parse_object_field__(Bin, Pos0, {ObjList}, Next) ->
                         end
                 end);
          (Key, <<$,, Rest1/binary>>, Pos1) ->
-              Obj2 = {[{Key, true}|ObjList]},
+              Obj2 = [{Key, true}|ObjList],
               parse_object_field__(Rest1, Pos1+1, Obj2, Next);
          (Key, Rest1, Pos1) ->
-              Obj2 = {[{Key, true}|ObjList]},
+              Obj2 = [{Key, true}|ObjList],
               parse_object_field_(Rest1, Pos1, Obj2, Next)
       end).
 
