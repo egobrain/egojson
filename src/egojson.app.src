@@ -1,12 +1,11 @@
 {application, egojson,
  [
-  {description, ""},
-  {vsn, "1"},
+  {description, "json decoder"},
+  {vsn, "0.1.0"},
   {registered, []},
   {applications, [
                   kernel,
                   stdlib
                  ]},
-  {mod, { egojson_app, []}},
   {env, []}
  ]}.
